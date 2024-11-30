@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres-master
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256\nhost replication all 0.0.0.0/0 md5"
+    ports:
+      - 5432:5432
+    command: postgres
+    shm_size: 1g
+    volumes:
+      - master_data:/var/lib/postgresql/data
+
+  postgres-replica-1:
+    image: postgres:15
+    container_name: postgres-replica-1
+    shm_size: 1g
+    environment:
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
+      PGHOST: postgres
+    command: |
+      bash -c "
+      PGUSER=postgres PGPASSWORD=password psql -c \"CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD 'replicator_password';\";  
+      PGUSER=postgres PGPASSWORD=password psql -c \"SELECT pg_create_physical_replication_slot('replication_slot');\";  
+      rm -rf /var/lib/postgresql/data/* && pg_basebackup --pgdata=/var/lib/postgresql/data -R --slot=replication_slot; 
+      chown -R postgres:postgres /var/lib/postgresql/data && chmod 0700 /var/lib/postgresql/data; 
+      su postgres -c postgres; 
+      "
+    depends_on:
+      - postgres
+    restart: always
+    ports:
+      - 5433:5432
+    volumes:
+      - replica1_data:/var/lib/postgresql/data
+
+  postgres-replica-2:
+    image: postgres:15
+    container_name: postgres-replica-2
+    shm_size: 1g
+    environment:
+      PGUSER: replicator2
+      PGPASSWORD: replicator_password
+      PGHOST: postgres
+    command: |
+      bash -c "
+      PGUSER=postgres PGPASSWORD=password psql -c \"CREATE USER replicator2 WITH REPLICATION ENCRYPTED PASSWORD 'replicator_password';\";  
+      PGUSER=postgres PGPASSWORD=password psql -c \"SELECT pg_create_physical_replication_slot('replication_slot2');\";  
+      rm -rf /var/lib/postgresql/data/* && pg_basebackup --pgdata=/var/lib/postgresql/data -R --slot=replication_slot2; 
+      chown -R postgres:postgres /var/lib/postgresql/data && chmod 0700 /var/lib/postgresql/data; 
+      su postgres -c postgres; 
+      "
+    depends_on:
+      - postgres
+    restart: always
+    ports:
+      - 5434:5432
+    volumes:
+      - replica2_data:/var/lib/postgresql/data
+
+  pgpool:
+    image: bitnami/pgpool:4
+    container_name: pgpool
+    environment:
+      # Credenciais do banco de dados principal
+      PGPOOL_POSTGRES_USERNAME: postgres
+      PGPOOL_POSTGRES_PASSWORD: password
+      
+      # Configuração dos nós de backend (master e réplicas)
+      PGPOOL_BACKEND_NODES: >-
+        0:postgres:5432,
+        1:postgres-replica-1:5433,
+        2:postgres-replica-2:5434
+
+      # Habilitar balanceamento de carga
+      PGPOOL_ENABLE_LOAD_BALANCING: "yes"
+
+      # Configuração de checagem de replicação
+      PGPOOL_SR_CHECK_USER: postgres
+      PGPOOL_SR_CHECK_PASSWORD: password
+
+      # Admin do Pgpool-II (opcional, mas recomendado)
+      PGPOOL_ADMIN_USERNAME: postgres
+      PGPOOL_ADMIN_PASSWORD: ppassword
+
+    ports:
+      - "9999:5432" # Porta de acesso ao Pgpool-II
+    depends_on:
+      - postgres
+      - postgres-replica-1
+      - postgres-replica-2
+
+volumes:
+  master_data:
+  replica1_data:
+  replica2_data:
