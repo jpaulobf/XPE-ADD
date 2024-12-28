@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15
+    image: postgres
     container_name: postgres-master
     environment:
       POSTGRES_USER: postgres
@@ -14,7 +14,7 @@ services:
       - master_data:/var/lib/postgresql/data
 
   postgres-replica-1:
-    image: postgres:15
+    image: postgres
     container_name: postgres-replica-1
     shm_size: 1g
     environment:
@@ -38,7 +38,7 @@ services:
       - replica1_data:/var/lib/postgresql/data
 
   postgres-replica-2:
-    image: postgres:15
+    image: postgres
     container_name: postgres-replica-2
     shm_size: 1g
     environment:
