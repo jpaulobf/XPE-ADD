@@ -1,5 +1,5 @@
-# XPE-ADD
+# XPE-ADD - Arquitetura de Dados
 
-## Módulo 3 - Arquitetura de Dados
+## Módulo 3
 
-### Prof. João Paulo Faria
+#### Prof. João Paulo Faria
