@@ -330,6 +330,8 @@ exit
 ```bash
 docker exec -it srv-shard-node02 mongosh --port 27018
 
+use DBSampleShard
+
 db.exampleCollection.find().pretty() #(talvez o dado não esteja aqui)
 
 exit
@@ -343,6 +345,8 @@ Vamos fazer outros testes.
 
 ```bash
 docker exec -it srv-shard-node04 mongosh --port 27019
+
+use DBSampleShard
 
 db.exampleCollection.insertOne({"data_criacao_documento":new Date(), "descricao_solicitacao":'descrição 34'});
 
@@ -362,6 +366,8 @@ exit
 ```bash
 docker exec -it srv-shard-node06 mongosh --port 27019
 
+use DBSampleShard
+
 db.exampleCollection.find().pretty()
 
 exit
@@ -374,6 +380,8 @@ exit
 ```bash
 docker exec -it srv-shard-node05 mongosh --port 27019
 
+use DBSampleShard
+
 db.exampleCollection.find().pretty()
 
 exit
@@ -384,9 +392,9 @@ exit
 ```bash
 docker exec -it mongo-router mongosh
 
-db.exampleCollection.getShardDistribution()
-
 use DBSampleShard
+
+db.exampleCollection.getShardDistribution()
 
 db.exampleCollection.find().pretty()
 
