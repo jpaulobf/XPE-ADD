@@ -1,35 +1,38 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, unix_timestamp, lit, lag, split
+from pyspark.sql.functions import col, unix_timestamp, lit, lag, split, udf
+from pyspark.sql.types import DoubleType
 from pyspark.sql.window import Window
 from math import radians, sin, cos, sqrt, atan2
+import math
 
 # Função para calcular a distância em km entre duas coordenadas (lat, lon) usando a fórmula de Haversine
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371  # Raio da Terra em quilômetros
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    
-    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-    distance = R * c
-    return distance
+    if None in [lat1, lon1, lat2, lon2]:  # Lida com valores nulos
+        return None
+    R = 6371  # Raio da Terra em km
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+
+# Registrar como UDF
+haversine_udf = udf(haversine, DoubleType())
 
 # Inicializar a sessão do Spark
 spark = SparkSession.builder.appName("Fraud Detection").getOrCreate()
 
 # Caminho do arquivo no bucket S3
-input_path = "s3://your-bucket-name/compras.log"  # Substitua pelo caminho do seu bucket S3
+input_path = "s3://your-bucket-name/compras_2k_fraudes.log"
 
 # Carregar o arquivo de logs
 df = spark.read.csv(input_path, header=True, inferSchema=True)
 
+# Mostra o DF
+df.show()
+
 # Exibir o esquema dos dados
 df.printSchema()
-
-# Supondo que a última coluna seja "Geo_Localizacao", que possui latitudes e longitudes separadas por vírgula (ex: "-23.5505,-46.6333")
-# Vamos dividir esta coluna em duas novas colunas: "Latitude" e "Longitude"
-df = df.withColumn("Latitude", split(col("Geo_Localizacao"), ",").getItem(0).cast("double"))
-df = df.withColumn("Longitude", split(col("Geo_Localizacao"), ",").getItem(1).cast("double"))
 
 # Janela para verificar compras consecutivas por CPF
 window_spec = Window.partitionBy("CPF").orderBy("Data_Hora")
@@ -46,16 +49,18 @@ df = df.withColumn(
     (col("Compra_Virtual") == lit(False)) & (col("Tempo_Entre_Compras") < 3600)  # Compras físicas em cidades distantes no mesmo intervalo
 )
 
-# Função para calcular a distância entre duas compras consecutivas
-def calc_distance(lat1, lon1, lat2, lon2):
-    if lat1 is not None and lat2 is not None:
-        return haversine(lat1, lon1, lat2, lon2)
-    return None
+# Mostra o DF
+df.show()
 
 # Calcular a distância entre as compras consecutivas (em km)
 df = df.withColumn(
     "Distancia_Cidades",
-    calc_distance(col("Latitude"), col("Longitude"), lag(col("Latitude")).over(window_spec), lag(col("Longitude")).over(window_spec))
+    haversine_udf(
+        col("latitude"),
+        col("longitude"),
+        lag(col("latitude")).over(window_spec),
+        lag(col("longitude")).over(window_spec)
+    )
 )
 
 # Condição de risco (compras físicas em cidades > 100 km no mesmo intervalo de tempo)
@@ -68,7 +73,7 @@ df = df.withColumn(
 fraudes = df.filter(col("Suspeita_Fraude") == lit(True))
 
 # Salvar resultado em um bucket S3
-output_path = "s3://your-bucket-name/suspect_purchases/"  # Substitua pelo seu bucket S3
+output_path = "s3://your-bucket-name/suspect_purchases/"
 fraudes.write.csv(output_path, header=True, mode="overwrite")
 
 # Exibir as fraudes encontradas
